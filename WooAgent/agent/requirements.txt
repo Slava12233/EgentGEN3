@@ -1,6 +1,7 @@
 # Core dependencies
 openai-agents>=0.0.8
 python-dotenv>=1.0.0
+git+https://github.com/modelcontextprotocol/python-sdk.git
 
 # Testing
 pytest>=7.0.0
