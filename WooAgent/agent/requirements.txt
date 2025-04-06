@@ -1,5 +1,5 @@
 # Core dependencies
-openai-agents>=0.1.0
+openai-agents>=0.0.8
 python-dotenv>=1.0.0
 
 # Testing
