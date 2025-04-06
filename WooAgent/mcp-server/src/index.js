@@ -1,7 +1,7 @@
 /**
  * WooAgent MCP Server
  * 
- * This script initializes and starts a WooCommerce MCP Server
+ * This script initializes and starts a WooCommerce API server
  * with configuration from environment variables.
  */
 
@@ -12,8 +12,6 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
-const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const WooCommerceRestApi = require('@woocommerce/woocommerce-rest-api').default;
 
 // Check for required environment variables
@@ -47,297 +45,118 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Initialize MCP Server
-class WooCommerceMcpServer {
-  constructor() {
-    this.server = new Server(
-      {
-        name: 'woocommerce-mcp-server',
-        version: '0.1.0',
-      },
-      {
-        capabilities: {
-          resources: {},
-          tools: {},
-        },
-      }
-    );
+// Define API routes
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString()
+  });
+});
 
-    this.setupTools();
-    
-    // Error handling
-    this.server.onerror = (error) => console.error('[MCP Error]', error);
-    process.on('SIGINT', async () => {
-      await this.server.close();
-      process.exit(0);
-    });
+// Products
+app.get('/api/products', async (req, res) => {
+  try {
+    const response = await woocommerce.get('products', req.query);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.status(500).json({ error: error.message });
   }
+});
 
-  setupTools() {
-    // List all tools
-    this.server.setRequestHandler({
-      method: 'list_tools',
-      params: {}
-    }, async () => ({
-      tools: [
-        {
-          name: 'list_products',
-          description: 'List all products in the store',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              per_page: {
-                type: 'number',
-                description: 'Number of products per page',
-              },
-              page: {
-                type: 'number',
-                description: 'Page number',
-              }
-            }
-          }
-        },
-        {
-          name: 'get_product',
-          description: 'Get a specific product by ID',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'number',
-                description: 'Product ID',
-              }
-            },
-            required: ['id']
-          }
-        },
-        {
-          name: 'create_product',
-          description: 'Create a new product',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              name: {
-                type: 'string',
-                description: 'Product name',
-              },
-              type: {
-                type: 'string',
-                description: 'Product type',
-              },
-              regular_price: {
-                type: 'string',
-                description: 'Product regular price',
-              },
-              description: {
-                type: 'string',
-                description: 'Product description',
-              }
-            },
-            required: ['name']
-          }
-        },
-        {
-          name: 'update_product',
-          description: 'Update an existing product',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'number',
-                description: 'Product ID',
-              },
-              name: {
-                type: 'string',
-                description: 'Product name',
-              },
-              regular_price: {
-                type: 'string',
-                description: 'Product regular price',
-              }
-            },
-            required: ['id']
-          }
-        },
-        {
-          name: 'list_orders',
-          description: 'List all orders in the store',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              per_page: {
-                type: 'number',
-                description: 'Number of orders per page',
-              },
-              page: {
-                type: 'number',
-                description: 'Page number',
-              }
-            }
-          }
-        },
-        {
-          name: 'get_order',
-          description: 'Get a specific order by ID',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'number',
-                description: 'Order ID',
-              }
-            },
-            required: ['id']
-          }
-        },
-        {
-          name: 'update_order',
-          description: 'Update an existing order',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'number',
-                description: 'Order ID',
-              },
-              status: {
-                type: 'string',
-                description: 'Order status',
-              }
-            },
-            required: ['id']
-          }
-        },
-        {
-          name: 'list_coupons',
-          description: 'List all coupons in the store',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              per_page: {
-                type: 'number',
-                description: 'Number of coupons per page',
-              },
-              page: {
-                type: 'number',
-                description: 'Page number',
-              }
-            }
-          }
-        },
-        {
-          name: 'create_coupon',
-          description: 'Create a new coupon',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              code: {
-                type: 'string',
-                description: 'Coupon code',
-              },
-              discount_type: {
-                type: 'string',
-                description: 'Discount type',
-              },
-              amount: {
-                type: 'string',
-                description: 'Coupon amount',
-              }
-            },
-            required: ['code', 'discount_type', 'amount']
-          }
-        }
-      ]
-    }));
-
-    // Call tool handler
-    this.server.setRequestHandler({
-      method: 'call_tool',
-      params: {
-        name: { type: 'string' },
-        arguments: { type: 'object' }
-      }
-    }, async (request) => {
-      const { name, arguments: args } = request.params;
-      
-      try {
-        let result;
-        
-        switch (name) {
-          case 'list_products':
-            result = await woocommerce.get('products', args);
-            break;
-          case 'get_product':
-            result = await woocommerce.get(`products/${args.id}`);
-            break;
-          case 'create_product':
-            result = await woocommerce.post('products', args);
-            break;
-          case 'update_product':
-            result = await woocommerce.put(`products/${args.id}`, args);
-            break;
-          case 'list_orders':
-            result = await woocommerce.get('orders', args);
-            break;
-          case 'get_order':
-            result = await woocommerce.get(`orders/${args.id}`);
-            break;
-          case 'update_order':
-            result = await woocommerce.put(`orders/${args.id}`, args);
-            break;
-          case 'list_coupons':
-            result = await woocommerce.get('coupons', args);
-            break;
-          case 'create_coupon':
-            result = await woocommerce.post('coupons', args);
-            break;
-          default:
-            throw new Error(`Unknown tool: ${name}`);
-        }
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result.data, null, 2)
-            }
-          ]
-        };
-      } catch (error) {
-        console.error(`Error calling tool ${name}:`, error);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error: ${error.message}`
-            }
-          ],
-          isError: true
-        };
-      }
-    });
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const response = await woocommerce.get(`products/${req.params.id}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error(`Error fetching product ${req.params.id}:`, error);
+    res.status(500).json({ error: error.message });
   }
+});
 
-  async start() {
-    // Start HTTP API
-    app.listen(PORT, () => {
-      console.log(`HTTP API running on port ${PORT}`);
-    });
-
-    // Start MCP Server
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
-    console.log('WooCommerce MCP server running on stdio');
+app.post('/api/products', async (req, res) => {
+  try {
+    const response = await woocommerce.post('products', req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error creating product:', error);
+    res.status(500).json({ error: error.message });
   }
-}
+});
+
+app.put('/api/products/:id', async (req, res) => {
+  try {
+    const response = await woocommerce.put(`products/${req.params.id}`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error(`Error updating product ${req.params.id}:`, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Orders
+app.get('/api/orders', async (req, res) => {
+  try {
+    const response = await woocommerce.get('orders', req.query);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/orders/:id', async (req, res) => {
+  try {
+    const response = await woocommerce.get(`orders/${req.params.id}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error(`Error fetching order ${req.params.id}:`, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/orders/:id', async (req, res) => {
+  try {
+    const response = await woocommerce.put(`orders/${req.params.id}`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error(`Error updating order ${req.params.id}:`, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Coupons
+app.get('/api/coupons', async (req, res) => {
+  try {
+    const response = await woocommerce.get('coupons', req.query);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching coupons:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/coupons', async (req, res) => {
+  try {
+    const response = await woocommerce.post('coupons', req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error creating coupon:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Start the server
-console.log('Starting WooCommerce MCP Server...');
+console.log('Starting WooCommerce API Server...');
 console.log(`WooCommerce URL: ${process.env.WOOCOMMERCE_URL}`);
 console.log(`Server port: ${PORT}`);
 
-const server = new WooCommerceMcpServer();
-server.start().catch(error => {
-  console.error('Error starting WooCommerce MCP Server:', error);
-  process.exit(1);
+app.listen(PORT, () => {
+  console.log(`WooCommerce API Server is running on port ${PORT}`);
+});
+
+// Handle graceful shutdown
+process.on('SIGINT', () => {
+  console.log('Shutting down WooCommerce API Server...');
+  process.exit(0);
 });
